@@ -1,0 +1,180 @@
+parameters:
+  - description: Application name
+    name: APPLICATION_NAME
+    required: false
+    value: docker-registry-cache
+  - description: Application version (tag)
+    name: APPLICATION_VERSION
+    required: false
+    value: latest
+  - description: Namespace/Project
+    name: NAMESPACE
+    required: false
+    value: docker-registry-cache
+  - description: Size of cache in MB
+    name: CACHE_SIZE_MB
+    required: false
+    value: "10000"
+  - description: Target registry IP
+    name: TARGET_REGISTRY_IP
+    required: false
+    value: docker.io
+  - description: Target registry port
+    name: TARGET_REGISTRY_PORT
+    required: false
+    value: "443"
+  - description: Cache home directory
+    name: HOME
+    required: false
+    value: /cache/cc
+  - description: Docker Image location
+    name: DOCKER_IMAGE_URI
+    required: false
+    value: image-registry.openshift-image-registry.svc:5000/docker-registry-cache/registry-cache
+
+apiVersion: template.openshift.io/v1
+kind: Template
+metadata:
+  name: ${APPLICATION_NAME}
+objects:
+  - apiVersion: v1
+    kind: ServiceAccount
+    metadata:
+      name: registry-cache
+      labels:
+        account: registry-cache
+
+  - apiVersion: maistra.io/v1
+    kind: ServiceMeshMember
+    metadata:
+      namespace: ${NAMESPACE}
+      name: default
+    spec:
+      controlPlaneRef:
+        name: basic
+        namespace: istio-system
+
+  - apiVersion: v1
+    kind: Service
+    metadata:
+      name: registry-cache
+      labels:
+        app: registry-cache
+        service: registry-cache
+      # annotations:
+      #   networking.istio.io/exportTo: "foo"
+
+    spec:
+      ports:
+        - name: squid
+          protocol: TCP
+          port: 3128
+      type: ClusterIP
+      selector:
+        app: registry-cache
+
+  - apiVersion: apps/v1
+    kind: Deployment
+    metadata:
+      name: registry-cache-v1
+      namespace: extract
+      labels:
+        app: registry-cache
+        version: v1
+    spec:
+      progressDeadlineSeconds: 600
+      replicas: 1
+      revisionHistoryLimit: 10
+      selector:
+        matchLabels:
+          app: registry-cache
+          version: v1
+      strategy:
+        rollingUpdate:
+          maxSurge: 25%
+          maxUnavailable: 25%
+        type: RollingUpdate
+      template:
+        metadata:
+          annotations:
+            sidecar.istio.io/inject: "true"
+          labels:
+            app: registry-cache
+            version: v1
+        spec:
+          serviceAccountName: registry-cache
+          containers:
+            - name: registry-cache
+              image: ${DOCKER_IMAGE_URI}:${APPLICATION_VERSION}
+              imagePullPolicy: IfNotPresent
+              resources: {}
+              terminationMessagePath: /dev/termination-log
+              terminationMessagePolicy: File
+              ports:
+                - containerPort: 5000
+                  protocol: TCP
+              envFrom:
+              env:
+                - name: CACHE_SIZE_MB
+                  value: ${CACHE_SIZE_MB}
+                - name: TARGET_REGISTRY_IP
+                  value: ${TARGET_REGISTRY_IP}
+                - name: TARGET_REGISTRY_PORT
+                  value: ${TARGET_REGISTRY_PORT}
+                - name: HOME
+                  value: ${HOME}
+
+          dnsPolicy: ClusterFirst
+          restartPolicy: Always
+          schedulerName: default-scheduler
+          securityContext: {}
+          terminationGracePeriodSeconds: 30
+          resources:
+            requests:
+              memory: 64M
+              cpu: 100m
+            limits:
+              memory: 256M
+              cpu: 256m
+  - apiVersion: networking.istio.io/v1alpha3
+    kind: Gateway
+    metadata:
+      name: ${APPLICATION_NAME}-gateway
+    spec:
+      selector:
+        istio: ingressgateway # use istio default controller
+      servers:
+        - port:
+            number: 443
+            name: https-443
+            protocol: HTTPS
+          hosts:
+            - "${NAMESPACE}-tls.apps.okd.rd-staging.mooch.rip"
+          tls:
+            mode: SIMPLE
+            credentialName: custom-default-ingress-cert
+            minProtocolVersion: TLSV1_2
+  - apiVersion: networking.istio.io/v1alpha3
+    kind: VirtualService
+    metadata:
+      name: registry-cache
+    spec:
+      hosts:
+        - "${NAMESPACE}-tls.apps.okd.rd-staging.mooch.rip"
+      gateways:
+        - ${APPLICATION_NAME}-gateway
+      http:
+        - route:
+            - destination:
+                host: registry-cache
+                port:
+                  number: 3128
+  - apiVersion: security.istio.io/v1beta1
+    kind: AuthorizationPolicy
+    metadata:
+      name: allow-all
+      namespace: "${NAMESPACE}"
+    spec:
+      action: ALLOW
+      rules:
+        - {}
