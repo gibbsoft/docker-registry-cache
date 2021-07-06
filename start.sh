@@ -3,16 +3,16 @@
 set -e
 
 interpolate_template() {
-    sed "s/<<CACHE_SIZE_MB>>/$CACHE_SIZE_MB/g" /etc/squid.conf >/tmp/squid.conf && cat /tmp/squid.conf >/etc/squid.conf
-    sed "s/<<REGISTRY_IP>>/$TARGET_REGISTRY_IP/g" /etc/squid.conf >/tmp/squid.conf && cat /tmp/squid.conf >/etc/squid.conf
-    sed "s/<<REGISTRY_PORT>>/$TARGET_REGISTRY_PORT/g" /etc/squid.conf >/tmp/squid.conf && cat /tmp/squid.conf >/etc/squid.conf
-    sed "s/<<APPLICATION_NAME>>/$APPLICATION_NAME/g" /etc/squid.conf >/tmp/squid.conf && cat /tmp/squid.conf >/etc/squid.conf
-    sed "s@<<HOME>>@$HOME@g" /etc/squid.conf >/tmp/squid.conf && cat /tmp/squid.conf >/etc/squid.conf
+    sed "s/<<CACHE_SIZE_MB>>/$CACHE_SIZE_MB/g" $SQUID_CONF >/tmp/squid.conf && cat /tmp/squid.conf >$SQUID_CONF
+    sed "s/<<REGISTRY_IP>>/$TARGET_REGISTRY_IP/g" $SQUID_CONF >/tmp/squid.conf && cat /tmp/squid.conf >$SQUID_CONF
+    sed "s/<<REGISTRY_PORT>>/$TARGET_REGISTRY_PORT/g" $SQUID_CONF >/tmp/squid.conf && cat /tmp/squid.conf >$SQUID_CONF
+    sed "s/<<APPLICATION_NAME>>/$APPLICATION_NAME/g" $SQUID_CONF >/tmp/squid.conf && cat /tmp/squid.conf >$SQUID_CONF
+    sed "s@<<HOME>>@$HOME@g" $SQUID_CONF >/tmp/squid.conf && cat /tmp/squid.conf >$SQUID_CONF
 }
 
 initialize_cache() {
     echo "Creating cache folder..."
-    /usr/sbin/squid -N -z -f /etc/squid.conf
+    /usr/sbin/squid -N -z -f $SQUID_CONF
     sleep 5
 }
 
@@ -31,7 +31,7 @@ run() {
     interpolate_template
     clear_certs_db
     initialize_cache
-    exec /usr/sbin/squid -NYCd 5 -f /etc/squid/squid.conf
+    exec /usr/sbin/squid -NYCd 5 -f $SQUID_CONF
 }
 
 run
