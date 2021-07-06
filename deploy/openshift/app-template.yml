@@ -2,7 +2,7 @@ parameters:
   - description: Application name
     name: APPLICATION_NAME
     required: false
-    value: docker-registry-cache
+    value: registry-cache
   - description: Application version (tag)
     name: APPLICATION_VERSION
     required: false
@@ -10,7 +10,7 @@ parameters:
   - description: Namespace/Project
     name: NAMESPACE
     required: false
-    value: docker-registry-cache
+    value: registry-cache
   - description: Size of cache in MB
     name: CACHE_SIZE_MB
     required: false
@@ -27,43 +27,39 @@ parameters:
     name: HOME
     required: false
     value: /cache/cc
-  - description: Docker Image location
-    name: DOCKER_IMAGE_URI
+  - description: Source location
+    name: SOURCE_URI
     required: false
-    value: image-registry.openshift-image-registry.svc:5000/docker-registry-cache/registry-cache
+    value: https://github.com/gibbsoft/docker-registry-cache.git
+  - description: Source git ref
+    name: SOURCE_REF
+    required: false
+    value: openshift
 
 apiVersion: template.openshift.io/v1
 kind: Template
 metadata:
   name: ${APPLICATION_NAME}
+message: "Registry cache runs on port 3128"
 objects:
   - apiVersion: v1
     kind: ServiceAccount
     metadata:
-      name: registry-cache
-      labels:
-        account: registry-cache
-
-  - apiVersion: maistra.io/v1
-    kind: ServiceMeshMember
-    metadata:
+      name: ${APPLICATION_NAME}
       namespace: ${NAMESPACE}
-      name: default
-    spec:
-      controlPlaneRef:
-        name: basic
-        namespace: istio-system
+      labels:
+        account: ${APPLICATION_NAME}
 
   - apiVersion: v1
     kind: Service
     metadata:
-      name: registry-cache
+      name: ${APPLICATION_NAME}
+      namespace: ${NAMESPACE}
       labels:
-        app: registry-cache
-        service: registry-cache
-      # annotations:
-      #   networking.istio.io/exportTo: "foo"
-
+        app: ${APPLICATION_NAME}
+        service: ${APPLICATION_NAME}
+      annotations:
+        service.beta.openshift.io/serving-cert-secret-name: ${APPLICATION_NAME}
     spec:
       ports:
         - name: squid
@@ -71,24 +67,80 @@ objects:
           port: 3128
       type: ClusterIP
       selector:
-        app: registry-cache
+        app: ${APPLICATION_NAME}
+
+  - apiVersion: image.openshift.io/v1
+    kind: ImageStream
+    metadata:
+      name: ${APPLICATION_NAME}
+      namespace: ${NAMESPACE}
+    spec:
+      lookupPolicy:
+        local: false
+
+  - apiVersion: image.openshift.io/v1
+    kind: ImageStream
+    metadata:
+      name: alpine
+    spec:
+      lookupPolicy:
+        local: false
+      tags:
+        - from:
+            kind: DockerImage
+            name: docker.io/library/alpine:3.8
+          referencePolicy:
+            type: Local
+          name: "3.8"
+          importPolicy: {}
+
+  - apiVersion: build.openshift.io/v1
+    kind: BuildConfig
+    metadata:
+      name: ${APPLICATION_NAME}
+      annotations:
+        template.alpha.openshift.io/wait-for-ready: "true"
+      labels:
+        app: ${APPLICATION_NAME}
+    spec:
+      nodeSelector: null
+      output:
+        to:
+          kind: ImageStreamTag
+          name: "${APPLICATION_NAME}:${APPLICATION_VERSION}"
+      postCommit: {}
+      resources: {}
+      source:
+        git:
+          uri: ${SOURCE_URI}
+          ref: ${SOURCE_REF}
+        type: Git
+      strategy:
+        DockerBuildStrategy:
+          dockerfilePath: Dockerfile
+          from:
+            kind: ImageStreamTag
+            name: alpine:3.8
+            namespace: ${NAMESPACE}
+        type: Docker
+      triggers:
+        - type: ImageChange
+        - type: ConfigChange
 
   - apiVersion: apps/v1
     kind: Deployment
     metadata:
-      name: registry-cache-v1
-      namespace: extract
+      name: ${APPLICATION_NAME}
+      namespace: ${NAMESPACE}
       labels:
-        app: registry-cache
-        version: v1
+        app: ${APPLICATION_NAME}
     spec:
       progressDeadlineSeconds: 600
       replicas: 1
       revisionHistoryLimit: 10
       selector:
         matchLabels:
-          app: registry-cache
-          version: v1
+          app: ${APPLICATION_NAME}
       strategy:
         rollingUpdate:
           maxSurge: 25%
@@ -96,24 +148,23 @@ objects:
         type: RollingUpdate
       template:
         metadata:
-          annotations:
-            sidecar.istio.io/inject: "true"
           labels:
-            app: registry-cache
-            version: v1
+            app: ${APPLICATION_NAME}
         spec:
-          serviceAccountName: registry-cache
+          serviceAccountName: ${APPLICATION_NAME}
           containers:
-            - name: registry-cache
-              image: ${DOCKER_IMAGE_URI}:${APPLICATION_VERSION}
-              imagePullPolicy: IfNotPresent
-              resources: {}
+            - name: ${APPLICATION_NAME}
+              image: image-registry.openshift-image-registry.svc:5000/${NAMESPACE}/${APPLICATION_NAME}:${APPLICATION_VERSION}
+              imagePullPolicy: Always
               terminationMessagePath: /dev/termination-log
               terminationMessagePolicy: File
               ports:
                 - containerPort: 5000
                   protocol: TCP
-              envFrom:
+              volumeMounts:
+                - name: ${APPLICATION_NAME}
+                  mountPath: /etc/${APPLICATION_NAME}
+                  readOnly: true
               env:
                 - name: CACHE_SIZE_MB
                   value: ${CACHE_SIZE_MB}
@@ -123,12 +174,17 @@ objects:
                   value: ${TARGET_REGISTRY_PORT}
                 - name: HOME
                   value: ${HOME}
-
-          dnsPolicy: ClusterFirst
-          restartPolicy: Always
-          schedulerName: default-scheduler
-          securityContext: {}
-          terminationGracePeriodSeconds: 30
+                - name: APPLICATION_NAME
+                  value: ${APPLICATION_NAME}
+              readinessProbe:
+                tcpSocket:
+                  port: 3128
+                initialDelaySeconds: 3
+                timeoutSeconds: 3
+          volumes:
+            - name: ${APPLICATION_NAME}
+              secret:
+                secretName: ${APPLICATION_NAME}
           resources:
             requests:
               memory: 64M
@@ -136,45 +192,8 @@ objects:
             limits:
               memory: 256M
               cpu: 256m
-  - apiVersion: networking.istio.io/v1alpha3
-    kind: Gateway
-    metadata:
-      name: ${APPLICATION_NAME}-gateway
-    spec:
-      selector:
-        istio: ingressgateway # use istio default controller
-      servers:
-        - port:
-            number: 443
-            name: https-443
-            protocol: HTTPS
-          hosts:
-            - "${NAMESPACE}-tls.apps.okd.rd-staging.mooch.rip"
-          tls:
-            mode: SIMPLE
-            credentialName: custom-default-ingress-cert
-            minProtocolVersion: TLSV1_2
-  - apiVersion: networking.istio.io/v1alpha3
-    kind: VirtualService
-    metadata:
-      name: registry-cache
-    spec:
-      hosts:
-        - "${NAMESPACE}-tls.apps.okd.rd-staging.mooch.rip"
-      gateways:
-        - ${APPLICATION_NAME}-gateway
-      http:
-        - route:
-            - destination:
-                host: registry-cache
-                port:
-                  number: 3128
-  - apiVersion: security.istio.io/v1beta1
-    kind: AuthorizationPolicy
-    metadata:
-      name: allow-all
-      namespace: "${NAMESPACE}"
-    spec:
-      action: ALLOW
-      rules:
-        - {}
+          dnsPolicy: ClusterFirst
+          restartPolicy: Always
+          schedulerName: default-scheduler
+          securityContext: {}
+          terminationGracePeriodSeconds: 30
