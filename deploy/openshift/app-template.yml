@@ -62,9 +62,12 @@ objects:
         service.beta.openshift.io/serving-cert-secret-name: ${APPLICATION_NAME}
     spec:
       ports:
-        - name: squid
+        - name: squid_tls
           protocol: TCP
           port: 8443
+        - name: squid_plain
+          protocol: TCP
+          port: 3128
       type: ClusterIP
       selector:
         app: ${APPLICATION_NAME}
@@ -160,6 +163,8 @@ objects:
               terminationMessagePolicy: File
               ports:
                 - containerPort: 8443
+                  protocol: TCP
+                - containerPort: 3128
                   protocol: TCP
               volumeMounts:
                 - name: ${APPLICATION_NAME}
