@@ -40,7 +40,7 @@ apiVersion: template.openshift.io/v1
 kind: Template
 metadata:
   name: ${APPLICATION_NAME}
-message: "Registry cache runs on port 3128"
+message: "Registry cache runs on port 8443"
 objects:
   - apiVersion: v1
     kind: ServiceAccount
@@ -64,7 +64,7 @@ objects:
       ports:
         - name: squid
           protocol: TCP
-          port: 3128
+          port: 8443
       type: ClusterIP
       selector:
         app: ${APPLICATION_NAME}
@@ -159,7 +159,7 @@ objects:
               terminationMessagePath: /dev/termination-log
               terminationMessagePolicy: File
               ports:
-                - containerPort: 3128
+                - containerPort: 8443
                   protocol: TCP
               volumeMounts:
                 - name: ${APPLICATION_NAME}
@@ -178,7 +178,7 @@ objects:
                   value: ${APPLICATION_NAME}
               readinessProbe:
                 tcpSocket:
-                  port: 3128
+                  port: 8443
                 initialDelaySeconds: 3
                 timeoutSeconds: 3
               resources:
