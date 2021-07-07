@@ -21,7 +21,7 @@ clear_certs_db() {
     local dest=/var/lib/ssl_db
 
     rm -rfv ${dest:?}/*
-    /usr/lib/squid/ssl_crtd -c -s /tmp/ssl_db
+    /usr/lib/squid/ssl_crtd -c -s /tmp/ssl_db -M 4MB
     mv /tmp/ssl_db/* ${dest}
     rmdir /tmp/ssl_db
 }
