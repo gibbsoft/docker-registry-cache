@@ -183,7 +183,7 @@ objects:
                   value: ${APPLICATION_NAME}
               readinessProbe:
                 tcpSocket:
-                  port: 8443
+                  port: 3128
                 initialDelaySeconds: 3
                 timeoutSeconds: 3
               resources:
