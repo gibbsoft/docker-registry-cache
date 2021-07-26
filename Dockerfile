@@ -7,6 +7,7 @@ COPY ./start.sh /bin/start.sh
 RUN chmod +x /bin/start.sh
 
 ENV CACHE_SIZE_MB=10000 \
+  APPLICATION_NAME=registry-cache \
   TARGET_REGISTRY_IP=docker.io \
   TARGET_REGISTRY_PORT=443 \
   HOME=/cache/cc \
@@ -21,9 +22,9 @@ ENV CACHE_SIZE_MB=10000 \
   C=US
 
 RUN touch $SQUID_PID && \
-  mkdir -p $HOME $SQUID_CERT_DIR $SQUID_CERTDB_DIR $SQUID_LOG_DIR && \
-  chgrp -R 0 $HOME $SQUID_CERT_DIR $SQUID_CERTDB_DIR $SQUID_LOG_DIR $SQUID_CONF $SQUID_PID && \
-  chmod -R g=u $HOME $SQUID_CERT_DIR $SQUID_CERTDB_DIR $SQUID_LOG_DIR $SQUID_CONF $SQUID_PID && \
+  mkdir -p /etc/$APPLICATION_NAME $HOME $SQUID_CERT_DIR $SQUID_CERTDB_DIR $SQUID_LOG_DIR && \
+  chgrp -R 0 /etc/$APPLICATION_NAME $HOME $SQUID_CERT_DIR $SQUID_CERTDB_DIR $SQUID_LOG_DIR $SQUID_CONF $SQUID_PID && \
+  chmod -R g=u /etc/$APPLICATION_NAME $HOME $SQUID_CERT_DIR $SQUID_CERTDB_DIR $SQUID_LOG_DIR $SQUID_CONF $SQUID_PID && \
   printf '[ v3_ca ]\n \
   basicConstraints = critical,CA:TRUE\n \
   subjectKeyIdentifier = hash\n \
